@@ -1,0 +1,119 @@
+library(Rsubread)
+
+### indice ###
+setwd('/media/softwareB/genomenes/human/')
+buildindex(basename="human",reference="hg38.fa")
+
+### archivos fastaq en gz ###
+fastq.files = list.files(path = "~/rna-seq/PRJNA480270/",
+                          pattern = ".fastq.gz",
+                          full.names = TRUE)
+fastq.files
+
+### alineamiento ###
+align(index = "human", readfile1=fastq.files)
+args(align)
+
+### bam files ###
+bam.files = list.files(path = "~/rna-seq/PRJNA480270/", pattern = ".BAM$", full.names = TRUE)
+bam.files
+
+props <- propmapped(files=bam.files)
+props
+
+### extraer valores de calidad ###
+qs0 = qualityScores(filename="~/rna-seq/PRJNA480270/SRR7501130.fastq.gz",nreads=100)
+qs1 = qualityScores(filename="~/rna-seq/PRJNA480270/SRR7501131.fastq.gz",nreads=100)
+qs2 = qualityScores(filename="~/rna-seq/PRJNA480270/SRR7501132.fastq.gz",nreads=100)
+qs3 = qualityScores(filename="~/rna-seq/PRJNA480270/SRR7501133.fastq.gz",nreads=100)
+qs4 = qualityScores(filename="~/rna-seq/PRJNA480270/SRR7501134.fastq.gz",nreads=100)
+qs5 = qualityScores(filename="~/rna-seq/PRJNA480270/SRR7501135.fastq.gz",nreads=100)
+
+### boxplot de calidad ###
+boxplot(qs0)
+boxplot(qs1)
+boxplot(qs2)
+boxplot(qs3)
+boxplot(qs4)
+boxplot(qs5)
+
+### conteo ###
+fc = featureCounts(bam.files, annot.inbuilt = "hg38")
+names(fc)
+
+### estadisticas de conteo ###
+fc$stat
+
+### numero de genes ###
+dim(fc$counts)
+
+### cabeza de los conteos ###
+head(fc$counts)
+
+### anotacion ###
+head(fc$annotation)
+
+### matriz de conteo ###
+matriz = fc$counts
+
+### eliminar redundancia de datos ###
+rm(props, qs0, qs1, qs2, qs3, qs4, qs5, bam.files, fastq.files)
+
+### analisi de expresion diferencial ###
+matriz = fc$counts
+anotacion = fc$annotation
+
+library(edgeR)
+
+# objeto dge
+d0 = DGEList(matriz)
+
+# procesamiento
+d0 = calcNormFactors(d0)
+d0
+
+snames = colnames(matriz) # nombre de las muestras
+snames
+
+# cambio de nombre
+colnames(d) =c('control_2',
+               'control_1',
+               'hipertension_1',
+               'control_3',
+               'hipertension_3',
+               'hipertension_2')
+
+plotMDS(d0$counts, col = c('steelblue',
+                   'steelblue',
+                   '#D2691E',
+                   'steelblue',
+                   '#D2691E',
+                   '#D2691E'))
+
+group = c('control',
+          'control',
+          'hipertension',
+          'control',
+          'hipertension',
+          'hipertension')
+
+# voom
+mm = model.matrix(~0 + group)
+tmp = voom(d0, mm, plot = T)
+
+### regresion lineal en lima ###
+fit = lmFit(tmp, mm)
+head(coef(fit))
+
+contr = makeContrasts(grouphipertension - groupcontrol, levels = colnames(coef(fit)))
+contr
+
+tmp = contrasts.fit(fit, contr)
+tmp = eBayes(tmp)
+top.table = topTable(tmp, sort.by = "P", n = Inf)
+head(top.table)
+
+length(which(top.table$adj.P.Val < 0.05)) # genes expresados diferencialmente menor a p = 0.05
+
+top.table$Gene = rownames(top.table)
+top.table = top.table[,c("Gene", names(top.table)[1:6])]
